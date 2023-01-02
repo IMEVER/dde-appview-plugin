@@ -17,7 +17,7 @@ public:
     explicit AppView(QWidget *parent = nullptr);
     DUrl rootUrl();
     bool setRootUrl(DUrl url);
-    void refresh();
+    void refresh(bool force=true);
 
 signals:
     void startLoad();

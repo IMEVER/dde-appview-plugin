@@ -15,9 +15,9 @@ ViewPlugin::ViewPlugin() :
 //    Q_INIT_RESOURCE(appview);
 
         appView = new AppView;
-        connect(appView, &AppView::urlChanged, this, [this] {
-//            notifyUrlChanged();
-        });
+//        connect(appView, &AppView::urlChanged, this, [this] {
+////            notifyUrlChanged();
+//        });
         connect(appView, &AppView::startLoad, [this]{
             if(state == DFMBaseView::ViewIdle) {
                 state = DFMBaseView::ViewBusy;

@@ -5,7 +5,7 @@
 #include <QLayout>
 #include <QStackedWidget>
 
-AppView::AppView(QWidget *parent) :m_desktopListView(nullptr), QWidget(parent)
+AppView::AppView(QWidget *parent) :QWidget(parent), m_desktopListView(nullptr)
 {
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
     QVBoxLayout *leftLayout = new QVBoxLayout;
@@ -33,15 +33,15 @@ bool AppView::setRootUrl(DUrl url) {
     if(url.scheme() == "app") {
         if(m_rootUrl != url) {
             m_rootUrl = url;
-            refresh();
-            emit urlChanged();
+            refresh(false);
+//            emit urlChanged();
         }
         return true;
     }
     return false;
 }
 
-void AppView::refresh() {
+void AppView::refresh(bool force) {
     if(m_rootUrl.host().isEmpty()) {
         if(!m_desktopListView) {
             m_desktopListView = new DesktopListView(this);
@@ -55,7 +55,7 @@ void AppView::refresh() {
             connect(m_desktopListView, &DesktopListView::finishLoad, this, &AppView::finishLoad);
             m_mainWidget->addWidget(m_desktopListView);
         } else {
-           m_desktopListView->refresh();
+           m_desktopListView->refresh(force);
            m_mainWidget->setCurrentWidget(m_desktopListView);
         }
     } else {

@@ -22,9 +22,12 @@
 
 DGUI_USE_NAMESPACE
 
+static QSet<QString> files;
+
 class DesktopFileModel : public QObject {
     Q_OBJECT
-public:
+public:    
+
     DesktopFileModel(QObject *parent=nullptr) : QObject(parent) {
         QStringList paths = QStandardPaths::standardLocations(QStandardPaths::ApplicationsLocation);
         QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
@@ -32,9 +35,13 @@ public:
         connect(watcher, &QFileSystemWatcher::directoryChanged, this, &DesktopFileModel::initDesktopFiles);
     }
 
-    void refresh() {
-        files.clear();
-        initDesktopFiles();
+    void refresh(bool force) {
+        if(force)
+            files.clear();
+        if(files.isEmpty())
+            initDesktopFiles();
+        else
+            emit directoryChanged(files.values());
     }
 
 private:
@@ -72,11 +79,10 @@ private:
     }
 
 signals:
-    void directoryChanged(QStringList addFiles, QStringList removeFiles);
+    void directoryChanged(QStringList addFiles, QStringList removeFiles=QStringList());
     void startLoad();
 
 private:
-    QSet<QString> files;
 };
 
 class DesktopItemView : public QWidget {
@@ -202,10 +208,10 @@ DesktopListView::DesktopListView(QWidget *parent) : QListWidget(parent)
         }
     });
 
-    QTimer::singleShot(10, this, &DesktopListView::refresh);
+    QTimer::singleShot(10, this, [this] { refresh(); });
 }
 
-void DesktopListView::refresh() {
+void DesktopListView::refresh(bool force) {
     emit startLoad();
     while(count()>0) {
         QListWidgetItem *item = takeItem(0);
@@ -213,7 +219,7 @@ void DesktopListView::refresh() {
         delete item;
     }
     cachedItem.clear();
-    m_model->refresh();
+    m_model->refresh(force);
 }
 
 QStringList DesktopListView::mimeTypes() const {
@@ -231,6 +237,7 @@ QMimeData *DesktopListView::mimeData(const QList<QListWidgetItem *> items) const
 }
 
 bool DesktopListView::dropMimeData(int index, const QMimeData *data, Qt::DropAction action) {
+    Q_UNUSED(action)
     QList<QUrl> urls = data->urls();
     bool accept = false;
     if(urls.count() == 1) {

@@ -4,13 +4,13 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui concurrent dbus
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 TARGET = dde-appview-plugin
 TEMPLATE = lib
 CONFIG += c++11 plugin link_pkgconfig
-PKGCONFIG += dtkwidget dtkgui
+PKGCONFIG += dtkwidget dtkgui dframeworkdbus
 
 include(../../common/common.pri)
 #include(../plugininterfaces/plugininterfaces.pri)
@@ -25,18 +25,26 @@ isEqual(ARCH, mips64) | isEqual(ARCH, mips32){
 DESTDIR = ../view
 
 SOURCES += \
-    appplugin.cpp \
-    viewplugin.cpp \
-    appview.cpp \
-    desktoplistview.cpp
+    src/appplugin.cpp \
+    src/desktopfilemodel.cpp \
+    src/launcherdbusinterface.cpp \
+    src/packageinfoview.cpp \
+    src/packagetreeview.cpp \
+    src/viewplugin.cpp \
+    src/appview.cpp \
+    src/desktoplistview.cpp
 
 HEADERS += \
-    appplugin.h \
-    viewplugin.h \
-    appview.h \
-    desktoplistview.h
+    src/appplugin.h \
+    src/desktopfilemodel.h \
+    src/launcherdbusinterface.h \
+    src/packageinfoview.h \
+    src/packagetreeview.h \
+    src/viewplugin.h \
+    src/appview.h \
+    src/desktoplistview.h
 DISTFILES += \
-    appView.json
+    resource/appView.json
 
 unix {
     target.path = $$PLUGINDIR/views
@@ -44,4 +52,4 @@ unix {
 }
 
 RESOURCES += \
-    appview.qrc
+    resource/appview.qrc

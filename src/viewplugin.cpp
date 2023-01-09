@@ -7,17 +7,17 @@
 
 DFM_USE_NAMESPACE
 
-ViewPlugin::ViewPlugin() :
+ViewPlugin::ViewPlugin(QObject *parent) :
     state(DFMBaseView::ViewIdle),
-    QObject()
+    QObject(parent)
     /*ViewInterface(parent)*/
 {
 //    Q_INIT_RESOURCE(appview);
 
         appView = new AppView;
-//        connect(appView, &AppView::urlChanged, this, [this] {
-////            notifyUrlChanged();
-//        });
+        connect(appView, &AppView::urlChanged, this, [this] {
+            notifyUrlChanged();
+        });
         connect(appView, &AppView::startLoad, [this]{
             if(state == DFMBaseView::ViewIdle) {
                 state = DFMBaseView::ViewBusy;
@@ -106,11 +106,11 @@ ViewPlugin::~ViewPlugin() {
 //    return appView;
 //}
 
-QWidget *ViewPlugin::widget() const {//QLabel *l=new QLabel;l->setText("test");return l;
+QWidget *ViewPlugin::widget() const {
     return appView;
 }
 
-DUrl ViewPlugin::rootUrl() const {//return DUrl("app:///");
+DUrl ViewPlugin::rootUrl() const {
     return appView->rootUrl();
 }
 
@@ -118,7 +118,7 @@ DFMBaseView::ViewState ViewPlugin::viewState() const {
     return state;
 }
 
-bool ViewPlugin::setRootUrl(const DUrl &url) {//return true;
+bool ViewPlugin::setRootUrl(const DUrl &url) {
     return appView->setRootUrl(url);
 }
 void ViewPlugin::refresh() {

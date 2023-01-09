@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+"http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+	<vendor>IMEVER</vendor>
+	<vendor_url>https://www.imever.cme/</vendor_url>
+	<action id="me.imever.pkexec.libdde-appview-plugin.edit">
+		<description>编辑应用程序desktop文件</description>
+		<message>需要授权以编辑文件</message>
+		<icon_name />
+		<defaults>
+			<allow_any>auth_admin_keep</allow_any>
+			<allow_inactive>auth_admin_keep</allow_inactive>
+			<allow_active>auth_admin_keep</allow_active>
+		</defaults>
+		<annotate key="org.freedesktop.policykit.exec.path">/usr/bin/deepin-editor</annotate>
+		<annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+		<message xml:lang="zh_CN">编辑文件需要授权</message>
+	</action>
+</policyconfig>

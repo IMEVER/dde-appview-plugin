@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/launcher_off.svg</file>
+        <file>images/launcher_on.svg</file>
+        <file>sh/dde-appview-plugin.sh</file>
+    </qresource>
+</RCC>

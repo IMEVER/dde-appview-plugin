@@ -17,7 +17,7 @@ class ViewPlugin : public QObject, public DFM_NAMESPACE::DFMBaseView/*, public V
 //    Q_PLUGIN_METADATA(IID ViewInterface_iid FILE "appView.json")
 //    Q_INTERFACES(ViewInterface)
 public:
-    explicit ViewPlugin();
+    explicit ViewPlugin(QObject *parent=nullptr);
     ~ViewPlugin();
 
 //    QString bookMarkText() override;

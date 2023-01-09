@@ -8,6 +8,7 @@
 #include <QLabel>
 
 class DesktopListView;
+class PackageInfoView;
 class QStackedWidget;
 
 class AppView : public QWidget
@@ -17,7 +18,7 @@ public:
     explicit AppView(QWidget *parent = nullptr);
     DUrl rootUrl();
     bool setRootUrl(DUrl url);
-    void refresh();
+    void refresh(bool force=true);
 
 signals:
     void startLoad();
@@ -30,6 +31,7 @@ private:
 
     DUrl m_rootUrl;
     DesktopListView *m_desktopListView;
+    PackageInfoView *m_desktopInfolView;
 };
 
 #endif // APPVIEW_H

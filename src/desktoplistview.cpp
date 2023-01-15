@@ -56,9 +56,19 @@ public:
     {
         DesktopFileInfo info(DUrl::fromLocalFile(m_file));
         m_fileName = m_file.mid(m_file.lastIndexOf('/') + 1).remove(".desktop");
-        m_displayName = info.fileDisplayName();
+        m_displayName = info.fileDisplayName();        
+
         canDrop = info.canDrop();
         canWrite = info.isWritable();
+
+        {
+            QSettings settings(m_file, QSettings::IniFormat);
+            settings.setIniCodec("utf-8");
+            settings.beginGroup("Desktop Entry");
+            Properties desktop(m_file, "Desktop Entry");
+
+            m_mimeType = desktop.value("MimeType", settings.value("MimeType")).toString().split(";", Qt::SkipEmptyParts).toSet();
+        }
 
         QVBoxLayout *layout = new QVBoxLayout(this);
         layout->setSpacing(5);
@@ -78,8 +88,12 @@ public:
         titleLabel->setFont(font);
         layout->addWidget(titleLabel);
         setFixedSize(125, 125);
+        setToolTip(QString("名称: %1\n分类: %2\n类型: %3").arg(info.getName()).arg(info.getCategories().join(" ")).arg(info.getType()));
 
         currentChanged(false);
+
+        setAcceptDrops(true);
+        setMouseTracking(true);
     }
 
     void open() {
@@ -179,6 +193,38 @@ protected:
         QWidget::mousePressEvent(event);
     }
 
+    void dragEnterEvent(QDragEnterEvent *event) override {
+        bool accept = false;
+        if(canDrop && !m_mimeType.isEmpty() && event->mimeData()->hasUrls()) {
+            QMimeDatabase dataBase;
+            for(QUrl url : event->mimeData()->urls()) {
+                accept = url.isLocalFile();
+                if(accept) {
+                    QFileInfo info(url.toLocalFile());
+                    accept = info.exists();
+                    if(accept) {
+                        QSet<QString> types;
+                        for(QMimeType type : dataBase.mimeTypesForFileName(url.toLocalFile()))
+                            types.insert(type.name());
+
+                        accept = !types.isEmpty() && m_mimeType.intersects(types);
+                    }
+                }
+                if(!accept) break;
+            }
+        }
+        event->setAccepted(accept);
+    }
+
+    void dropEvent(QDropEvent *event) override {
+        QStringList files;
+        for(QUrl url : event->mimeData()->urls())
+            files.append(url.toLocalFile());
+
+         FileUtils::openFilesByApp(m_file, files);
+         event->accept();
+    }
+
     void paintEvent(QPaintEvent *event) override
     {
         Q_UNUSED(event)
@@ -210,6 +256,7 @@ private:
     QString m_fileName;
     QString m_packageName;
     QString m_displayName;
+    QSet<QString> m_mimeType;
     bool canDrop;
     bool canWrite;
     bool m_current;
@@ -342,30 +389,16 @@ QMimeData *DesktopListView::mimeData(const QList<QListWidgetItem *> items) const
 }
 
 bool DesktopListView::dropMimeData(int index, const QMimeData *data, Qt::DropAction action) {
+    Q_UNUSED(index)
     Q_UNUSED(action)
-    QList<QUrl> urls = data->urls();
+
     bool accept = false;
-    if(urls.count() == 1) {
-        auto url = urls.first();
-        if(url.isLocalFile() && url.fileName().endsWith(".deb")) {
-           accept = QFile(url.toLocalFile()).exists();
-        }
-    }
-
-    if(!accept && data->hasUrls()) {
-        bool allFile = true;
-        for(auto url : data->urls()) {
-            if(!url.isLocalFile() || !QFile(url.toLocalFile()).exists()) {
-                allFile = false;
-                break;
-            }
-        }
-
-        if(allFile) {
-            if(QListWidgetItem *i = item(index)) {
-                DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(i));
-                accept = v->canDrop;
-            }
+    if(data->hasUrls()) {
+        for(QUrl url : data->urls()) {
+            accept = url.isLocalFile() && url.fileName().endsWith(".deb");
+            if(accept)
+                accept = QFile(url.toLocalFile()).exists();
+            if(!accept) break;
         }
     }
 
@@ -373,94 +406,28 @@ bool DesktopListView::dropMimeData(int index, const QMimeData *data, Qt::DropAct
 }
 
 void DesktopListView::dragEnterEvent(QDragEnterEvent *event) {
-     QList<QUrl> urls = event->mimeData()->urls();
-     bool accept = false;
-     if(urls.count() == 1) {
-         auto url = urls.first();
-         if(url.isLocalFile() && url.fileName().endsWith(".deb")) {
-            accept = QFile(url.toLocalFile()).exists();
-         }
-     }
-
-     if(accept)
-         return event->accept();
-//     else
-//         return event->ignore();
-    QListWidget::dragEnterEvent(event);
-}
-
-void DesktopListView::dragMoveEvent(QDragMoveEvent *e) {
-    QList<QUrl> urls = e->mimeData()->urls();
-    bool accept = false;
-    if(urls.count() == 1) {
-        auto url = urls.first();
-        if(url.isLocalFile() && url.fileName().endsWith(".deb")) {
-           accept = QFile(url.toLocalFile()).exists();
-        }
-    }
-
-    if(!accept && e->mimeData()->hasUrls()) {
-        bool allFile = true;
-        for(auto url : e->mimeData()->urls()) {
-            if(!url.isLocalFile() || !QFile(url.toLocalFile()).exists()) {
-                allFile = false;
-                break;
-            }
-        }
-        if(allFile) {
-            if(QListWidgetItem *i = itemAt(e->pos())) {
-                DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(i));
-                accept = v->canDrop;
-            }
-        }
-    }
-
-    if(accept)
-        return e->accept();
-//    else
-//        return e->ignore();
-
-    QListWidget::dragMoveEvent(e);
-}
-
-void DesktopListView::dropEvent(QDropEvent *event) {
     bool accept = false;
     if(event->mimeData()->hasUrls()) {
-        QStringList debs;
-        for(auto url : event->mimeData()->urls()) {
-            if(url.isLocalFile() && url.fileName().endsWith(".deb") && QFile(url.toLocalFile()).exists())
-                debs << url.toLocalFile();
-        }
-        if(!debs.isEmpty()) {
-            FileUtils::openFiles(debs);
-            accept = true;
-        }
+         for(QUrl url : event->mimeData()->urls()) {
+             if(url.isLocalFile() && url.fileName().endsWith(".deb"))
+                accept = QFile(url.toLocalFile()).exists();
+             else
+                 accept = false;
+             if(!accept) break;
+         }
     }
+    event->setAccepted(accept);
+}
 
-    if(!accept && event->mimeData()->hasUrls()) {
-        bool allFile = true;
-        QStringList files;
-        for(auto url : event->mimeData()->urls()) {
-            if(!url.isLocalFile() || !QFile(url.toLocalFile()).exists()) {
-                allFile = false;
-                break;
-            }
-            files.append(url.toLocalFile());
-        }
+void DesktopListView::dropEvent(QDropEvent *event) {        
+    QStringList files;
+    for(auto url : event->mimeData()->urls())
+        files.append(url.toLocalFile());
 
-        if(allFile) {
-            if(QListWidgetItem *i = itemAt(event->pos())) {
-                DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(i));
-                accept = v->canDrop;
-                if(accept)
-                    FileUtils::openFilesByApp(v->m_file, files);
-            }
-        }
+    if(!files.isEmpty()) {
+        FileUtils::openFiles(files);
+        return event->accept();
     }
-
-    if(accept) return event->accept();
-
-    QListWidget::dropEvent(event);
 }
 
 void DesktopListView::keyReleaseEvent(QKeyEvent *event)

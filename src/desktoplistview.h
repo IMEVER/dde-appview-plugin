@@ -23,7 +23,6 @@ protected:
     QMimeData *mimeData(const QList<QListWidgetItem *> items) const override;
     bool dropMimeData(int index, const QMimeData *data, Qt::DropAction action) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
-    void dragMoveEvent(QDragMoveEvent *e) override;
     void dropEvent(QDropEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;

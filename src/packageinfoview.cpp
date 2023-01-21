@@ -6,7 +6,7 @@
 #include <QHeaderView>
 #include <QRegExp>
 #include <QHBoxLayout>
-#include <QListWidget>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QLabel>
 #include <QFont>
@@ -240,14 +240,16 @@ public:
         m_label->setFont(font);
         layout->addWidget(m_label, 0, Qt::AlignLeft | Qt::AlignTop);
 
-        m_listWidget = new QListWidget(this);
+        m_listWidget = new QPlainTextEdit(this);
+        m_listWidget->setReadOnly(true);
+        m_listWidget->setLineWrapMode(QPlainTextEdit::NoWrap);
         m_listWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         layout->addWidget(m_listWidget, 1);
 
         m_packageButton = new QPushButton("开始提取", this);
         connect(m_packageButton, &QPushButton::clicked, this, [this]{
             QtConcurrent::run([this]{
-                static QStringList debianFiles{"control", "conffiles", "config", "copyright", "list", "md5sums", "postinst", "postrm", "preinst", "prerm", "shlibs", "symbols", "templates", "triggers"};
+                static const QStringList debianFiles{"control", "conffiles", "config", "copyright", "list", "md5sums", "postinst", "postrm", "preinst", "prerm", "shlibs", "symbols", "templates", "triggers"};
 
                 emit message("创建打包根目录");
                 QDir dir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation));
@@ -262,10 +264,10 @@ public:
                 for(QString file : DesktopFileModel::instance()->getPackageFiles(m_packageName)) {
                     QFileInfo info(file);
                     if(info.isDir()) {
-                        m_listWidget->addItem("创建目录 " + file);
+                        m_listWidget->appendPlainText("创建目录 " + file);
                         dir.mkpath(file.remove(0, 1));
                     } else if(info.isFile()) {
-                        m_listWidget->addItem("拷贝文件: " + file);
+                        m_listWidget->appendPlainText("拷贝文件: " + file);
                         QFile::copy(file, rootPath + file);
                     }
                 }
@@ -274,13 +276,13 @@ public:
                 for(auto debian : debianFiles) {
                     QString file("/var/lib/dpkg/info/" + m_packageName + "." + debian);
                     if(QFileInfo(file).exists()) {
-                        m_listWidget->addItem("拷贝DEBIAN文件: " + debian);
+                        m_listWidget->appendPlainText("拷贝DEBIAN文件: " + debian);
                         QFile::copy(file, rootPath + "/DEBIAN/" + debian);
                     }
                 }
 
                 QProcess process;
-                m_listWidget->addItem("生成control文件");
+                m_listWidget->appendPlainText("生成control文件");
                 process.start("dpkg", {"--status", m_packageName});
                 if(process.waitForStarted() && process.waitForFinished()) {
                     QByteArray reply = process.readAll();
@@ -295,23 +297,23 @@ public:
                 }
                 process.close();
                 emit message("开始打包" + m_packageName);
-                m_listWidget->addItem("开始打包: " + deb);
+                m_listWidget->appendPlainText("开始打包: " + deb);
                 process.start("dpkg-deb", {"--build", rootPath, deb});
                 if(process.waitForStarted() && process.waitForFinished()) {
                     QByteArray reply = process.readAll();
                     process.close();
                     if(!reply.isEmpty())
-                        m_listWidget->addItems(QString(reply).split("\n", Qt::SkipEmptyParts));
+                        m_listWidget->appendPlainText(QString(reply));
                     if(QFileInfo(deb).exists()) {
                         emit message("打包完成： " + m_packageName);
-                        m_listWidget->addItem("打包完成: " + deb);
+                        m_listWidget->appendPlainText("打包完成: " + deb);
                         m_packageButton->setEnabled(false);
                         m_openButton->setEnabled(true);
                         m_copyButton->setEnabled(true);
                         dir.removeRecursively();
                     }
                 } else
-                    m_listWidget->addItem(process.errorString());
+                    m_listWidget->appendPlainText(process.errorString());
                 process.close();
             });
         });
@@ -336,9 +338,9 @@ public:
             QString deb(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/" + m_packageName + ".deb");
             data->setUrls(QList<QUrl>{QUrl::fromLocalFile(deb)});
             data->setText(deb);
-            QByteArray ba = "copy";
+            QString ba = "copy";
             ba.append("\n").append(QUrl::fromLocalFile(deb).toString());
-            data->setData("x-special/gnome-copied-files", ba);
+            data->setData("x-special/gnome-copied-files", ba.toUtf8());
             clip->setMimeData(data);
         });
         l->addWidget(m_copyButton, 0, Qt::AlignRight);
@@ -349,6 +351,7 @@ public:
             m_packageName = packageName;
 
             m_label->setText(m_packageName);
+            m_listWidget->clear();
 
             bool exist = QFileInfo(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/" + m_packageName + ".deb").exists();
 
@@ -365,7 +368,7 @@ private:
     QString m_packageName;
 
     QLabel *m_label;
-    QListWidget *m_listWidget;
+    QPlainTextEdit *m_listWidget;
     QPushButton *m_packageButton;
     QPushButton *m_openButton;
     QPushButton *m_copyButton;

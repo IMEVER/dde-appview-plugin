@@ -3,7 +3,6 @@
 #include "desktopfilemodel.h"
 #include "launcherdbusinterface.h"
 
-#include "../../dde-file-manager-lib/models/desktopfileinfo.h"
 #include <singleton.h>
 #include "../../dde-file-manager-lib/app/define.h"
 #include "../../dde-file-manager-lib/app/filesignalmanager.h"
@@ -29,6 +28,7 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QtConcurrent>
+#include <QFutureWatcher>
 
 DGUI_USE_NAMESPACE
 
@@ -45,59 +45,71 @@ bool copyBash() {
     return true;
 }
 
+struct DesktopFileInfo{
+    QString file;
+    QString name;
+    QString fileName;
+    QString packageName;
+    QString type;
+    QString icon;
+    QString displayName;
+    QString categories;
+    QSet<QString> mimeType;
+    bool canDrop = false;
+    bool canWrite = false;
+
+    DesktopFileInfo(){}
+
+    DesktopFileInfo& operator=(const DesktopFileInfo &info) {
+        file = info.file;
+        name = info.name;
+        displayName = info.displayName;
+        type = info.type;
+        icon = info.icon;
+        categories = info.categories;
+        mimeType.clear();
+        mimeType += info.mimeType;
+        canDrop = info.canDrop;
+        canWrite = info.canWrite;
+        return *this;
+    }
+};
 
 class DesktopItemView : public QWidget {
     Q_OBJECT
 public:
-    DesktopItemView(QString file, LauncherDbus *launcher, DBusDock *dock, DesktopListView *parent) : QWidget(parent),
-        m_file(file),
-        m_launcher(launcher) ,
+    DesktopItemView(const QString &file, LauncherDbus *launcher, DBusDock *dock, DesktopListView *parent) : QWidget(parent),
+        m_launcher(launcher),
         m_dock(dock)
     {
-        DesktopFileInfo info(DUrl::fromLocalFile(m_file));
-        m_fileName = m_file.mid(m_file.lastIndexOf('/') + 1).remove(".desktop");
-        m_displayName = info.fileDisplayName();        
-
-        canDrop = info.canDrop();
-        canWrite = info.isWritable();
-
-        {
-            QSettings settings(m_file, QSettings::IniFormat);
-            settings.setIniCodec("utf-8");
-            settings.beginGroup("Desktop Entry");
-            Properties desktop(m_file, "Desktop Entry");
-
-            m_mimeType = desktop.value("MimeType", settings.value("MimeType")).toString().split(";", Qt::SkipEmptyParts).toSet();
-        }
+        m_info.file = file;
+        m_info.fileName = file.mid(file.lastIndexOf('/') + 1).remove(".desktop");
 
         QVBoxLayout *layout = new QVBoxLayout(this);
         layout->setSpacing(5);
         layout->setContentsMargins(10, 10, 10, 10);
-        QLabel *iconLabel = new QLabel(this);
+        iconLabel = new QLabel(this);
         iconLabel->setFixedSize(70, 70);
         iconLabel->setScaledContents(true);
-        iconLabel->setAlignment(Qt::AlignCenter);
-        iconLabel->setPixmap(info.fileIcon().pixmap(QSize(70, 70)));
+        iconLabel->setAlignment(Qt::AlignCenter);        
         layout->addWidget(iconLabel, 0, Qt::AlignCenter);
 
-        QLabel *titleLabel = new QLabel(m_displayName, this);
-        titleLabel->setFixedSize(115, 30);
+        titleLabel = new QLabel(m_info.fileName, this);
+        titleLabel->setFixedSize(105, 30);
         titleLabel->setAlignment(Qt::AlignCenter);
         QFont font = titleLabel->font();
         font.setBold(true);
         titleLabel->setFont(font);
         layout->addWidget(titleLabel);
-        setFixedSize(125, 125);
-        setToolTip(QString("名称: %1\n分类: %2\n类型: %3").arg(info.getName()).arg(info.getCategories().join(" ")).arg(info.getType()));
+        setFixedSize(125, 125);        
 
         currentChanged(false);
-
         setAcceptDrops(true);
         setMouseTracking(true);
     }
 
     void open() {
-        FileUtils::launchApp(m_file);
+        FileUtils::launchApp(m_info.file);
     }
 
     void currentChanged(bool current, bool hover=false) {
@@ -126,63 +138,61 @@ protected:
 
             QMenu *menu = new QMenu(this);
             menu->addAction("打开", [this]{ open(); });
-            menu->addAction(canWrite ? "编辑" : "以管理员身份编辑", [this]{
-                if(canWrite)
-                    QProcess::startDetached("xdg-open", {m_file});
+            menu->addAction(m_info.canWrite ? "编辑" : "以管理员身份编辑", [this]{
+                if(m_info.canWrite)
+                    QProcess::startDetached("xdg-open", {m_info.file});
                 else if(copyBash())
-                    QProcess::startDetached("bash", {bashPath, "-e", m_file});
+                    QProcess::startDetached("bash", {bashPath, "-e", m_info.file});
             });
             menu->addAction("复制", [this]{
                 QClipboard *clip = QGuiApplication::clipboard();
                 QMimeData *data = new QMimeData;
-                data->setUrls(QList<QUrl>{QUrl::fromLocalFile(m_file)});
-                data->setText(m_file);
-                QByteArray ba = "copy";
-                ba.append("\n").append(QUrl::fromLocalFile(m_file).toString());
+                data->setUrls(QList<QUrl>{QUrl::fromLocalFile(m_info.file)});
+                data->setText(m_info.file);
+                QByteArray ba = "copy\n";
+                ba.append(QUrl::fromLocalFile(m_info.file).toString().toUtf8());
                 data->setData("x-special/gnome-copied-files", ba);
                 clip->setMimeData(data);
             });
 
             menu->addSeparator();
 
-            auto reply = m_launcher->IsItemOnDesktop(m_fileName);
+            auto reply = m_launcher->IsItemOnDesktop(m_info.fileName);
             reply.waitForFinished();
             const bool isOnDesktop = !reply.isError() && reply.value();
             menu->addAction(isOnDesktop ? "从桌面删除" : "发送到桌面", this, [this, isOnDesktop]{
                 if(isOnDesktop)
-                    m_launcher->RequestRemoveFromDesktop(m_fileName);
+                    m_launcher->RequestRemoveFromDesktop(m_info.fileName);
                 else
-                    m_launcher->RequestSendToDesktop(m_fileName);
+                    m_launcher->RequestSendToDesktop(m_info.fileName);
             });
 
-            reply = m_dock->IsDocked(m_file);
+            reply = m_dock->IsDocked(m_info.file);
             reply.waitForFinished();
             const bool isDocked = !reply.isError() && reply.value();
             menu->addAction(isDocked ? "从任务栏删除" : "发送到任务栏", this, [this, isDocked]{
                 if(isDocked)
-                    m_dock->RequestUndock(m_file);
+                    m_dock->RequestUndock(m_info.file);
                 else
-                    m_dock->RequestDock(m_file, -1);
+                    m_dock->RequestDock(m_info.file, -1);
             });
 
             menu->addSeparator();
             menu->addAction("查看包信息", [this]{
-                emit requestCd(DUrl("plugin://app/" + m_packageName + "#info"));
+                emit requestCd(DUrl("plugin://app/" + m_info.packageName + "#info"));
             })->setEnabled(isPackage);
             menu->addAction("查看包文件列表", [this]{
-                emit requestCd(DUrl("plugin://app/" + m_packageName + "#file"));
+                emit requestCd(DUrl("plugin://app/" + m_info.packageName + "#file"));
             })->setEnabled(isPackage);
             menu->addAction("提取包", [this]{
-//                if(copyBash())
-                emit requestCd(DUrl("plugin://app/" + m_packageName + "#package"));
-//                    QProcess::startDetached("bash", {bashPath, "-p", m_packageName});
+                emit requestCd(DUrl("plugin://app/" + m_info.packageName + "#package"));
             })->setEnabled(isPackage);
             menu->addAction("卸载", [this]{
                 //                    if(QProcess::startDetached("pkexec", {"dpkg", "-r", package}))
                 //                        qInfo()<<"'卸载软件成功: " << package;
                 //                    emit requestUninstall(package, false);
                 if(copyBash())
-                    QProcess::startDetached("bash", {bashPath, "-u", m_packageName});
+                    QProcess::startDetached("bash", {bashPath, "-u", m_info.packageName});
             })->setEnabled(isPackage);
 
             menu->exec(event->globalPos());
@@ -195,7 +205,7 @@ protected:
 
     void dragEnterEvent(QDragEnterEvent *event) override {
         bool accept = false;
-        if(canDrop && !m_mimeType.isEmpty() && event->mimeData()->hasUrls()) {
+        if(m_info.canDrop && !m_info.mimeType.isEmpty() && event->mimeData()->hasUrls()) {
             QMimeDatabase dataBase;
             for(QUrl url : event->mimeData()->urls()) {
                 accept = url.isLocalFile();
@@ -207,7 +217,7 @@ protected:
                         for(QMimeType type : dataBase.mimeTypesForFileName(url.toLocalFile()))
                             types.insert(type.name());
 
-                        accept = !types.isEmpty() && m_mimeType.intersects(types);
+                        accept = !types.isEmpty() && m_info.mimeType.intersects(types);
                     }
                 }
                 if(!accept) break;
@@ -221,7 +231,7 @@ protected:
         for(QUrl url : event->mimeData()->urls())
             files.append(url.toLocalFile());
 
-         FileUtils::openFilesByApp(m_file, files);
+         FileUtils::openFilesByApp(m_info.file, files);
          event->accept();
     }
 
@@ -243,22 +253,27 @@ private:
     }
 
     bool checkPackageName() {
-        if(m_packageName.isEmpty())
-            m_packageName = DesktopFileModel::instance()->getPackageName(m_file);
-        return !m_packageName.isEmpty();
+        if(m_info.packageName.isEmpty())
+            m_info.packageName = DesktopFileModel::instance()->getPackageName(m_info.file);
+        return !m_info.packageName.isEmpty();
+    }
+
+    void updateInfo(const DesktopFileInfo &info) {
+        m_info = info;
+        iconLabel->setPixmap(QIcon::fromTheme(m_info.icon).pixmap(QSize(70, 70)));
+        titleLabel->setText(titleLabel->fontMetrics().elidedText(m_info.displayName, Qt::ElideRight, titleLabel->width()));
+        checkPackageName();
+        setToolTip(QString("名称: %1\n分类: %2\n类型: %3\n包名: %4\n位置: %5").arg(m_info.name).arg(m_info.categories).arg(m_info.type).arg(m_info.packageName).arg(m_info.file));
     }
 
 signals:
     void requestCd(DUrl url);
 
 private:
-    QString m_file;
-    QString m_fileName;
-    QString m_packageName;
-    QString m_displayName;
-    QSet<QString> m_mimeType;
-    bool canDrop;
-    bool canWrite;
+    QLabel *iconLabel;
+    QLabel *titleLabel;
+
+    DesktopFileInfo m_info;
     bool m_current;
 
     LauncherDbus *m_launcher;
@@ -266,12 +281,37 @@ private:
     friend class DesktopListView;
 };
 
+std::function<DesktopFileInfo*(const QString &)> map = [](const QString &file){
+    DesktopFileInfo *info(new DesktopFileInfo);
+    info->file = file;
+
+    QSettings settings(file, QSettings::IniFormat);
+    if(settings.status() == QSettings::NoError) {
+        settings.setIniCodec("utf-8");
+        settings.beginGroup("Desktop Entry");
+
+        info->name = settings.value("Name").toString();
+        info->displayName = settings.value(QString("Name[%1]").arg(QLocale::system().name()), info->name).toString();
+        info->icon = settings.value("Icon").toString();
+        info->type = settings.value("Type").value<QString>();
+        info->categories = settings.value("Categories").toString();
+        info->canDrop = settings.value("Exec").toString().trimmed().contains(QRegExp("(\\s%f|\\s%u)$", Qt::CaseInsensitive));
+        info->canWrite = settings.isWritable();
+
+        for(auto mt : settings.value("MimeType").toString().split(";", Qt::SkipEmptyParts))
+            info->mimeType << mt;
+    }
+    return info;
+};
+
 DesktopListView::DesktopListView(QWidget *parent) : QListWidget(parent),
     m_loading(false),
     launcher(new LauncherDbus(QDBusConnection::sessionBus(), this)),
     dock(new DBusDock("com.deepin.dde.daemon.Dock", "/com/deepin/dde/daemon/Dock", QDBusConnection::sessionBus(), this)),
     m_searchEditor(nullptr),
-    m_searchTimer(nullptr)
+    m_searchTimer(nullptr),
+    m_watcher(new QFutureWatcher<DesktopFileInfo*>(this)),
+    m_update(false)
 {
     setFlow(QListWidget::LeftToRight);
     setViewMode(QListWidget::IconMode);
@@ -290,46 +330,56 @@ DesktopListView::DesktopListView(QWidget *parent) : QListWidget(parent),
     setSpacing(30);
     setContentsMargins(30, 10, 30, 10);
 
+    connect(m_watcher, &QFutureWatcher<DesktopFileInfo*>::resultReadyAt, this, [this](const int index){
+        DesktopFileInfo *info = m_watcher->resultAt(index);
+        if(QListWidgetItem *item = cachedItem.value(info->file)) {
+            if(!m_update) item->setText(info->displayName);
+            if(auto desktopItemView = qobject_cast<DesktopItemView*>(itemWidget(item)))
+                desktopItemView->updateInfo(*info);
+        }
+    });
+    connect(m_watcher, &QFutureWatcher<DesktopFileInfo*>::finished, this, [this]{
+        if(m_update == false) {
+            sortItems();
+            for(auto i : cachedItem.values()) i->setText("");
+        }
+    });
+
     connect(DesktopFileModel::instance(), &DesktopFileModel::startLoad, this, [this]{
         m_loading = true;
         startLoad();
     });
     connect(DesktopFileModel::instance(), &DesktopFileModel::directoryChanged, this, [this](QStringList addFiles, QStringList removeFiles){
-//        QtConcurrent::run([this, removeFiles, addFiles]{
-            const bool isUpdate = count() > 0;
-            for(auto file : removeFiles) {
-                if(QListWidgetItem *item = cachedItem.take(file)) {
-                    DesktopItemView *desktopItemView = qobject_cast<DesktopItemView*>(itemWidget(item));
-                    delete item;
-                    desktopItemView->deleteLater();
-                }
+        m_update = count() > 0;
+        for(auto file : removeFiles) {
+            if(QListWidgetItem *item = cachedItem.take(file)) {
+                DesktopItemView *desktopItemView = qobject_cast<DesktopItemView*>(itemWidget(item));
+                delete item;
+                desktopItemView->deleteLater();
             }
+        }
 
-            for(auto file : addFiles) {
-                if(cachedItem.contains(file)) continue;
+        for(auto file : addFiles) {
+            if(cachedItem.contains(file)) continue;
 
-                QListWidgetItem *item = new QListWidgetItem(this);
-                item->setSizeHint(QSize(125, 125));
-                if(isUpdate)
-                    this->insertItem(0, item);
-                else
-                    this->addItem(item);
+            QListWidgetItem *item = new QListWidgetItem(this);
+            item->setSizeHint(QSize(125, 125));
+            if(m_update)
+                this->insertItem(0, item);
+            else
+                this->addItem(item);
 
-                DesktopItemView *desktopItemView = new DesktopItemView(file, launcher, dock, this);
-                connect(desktopItemView, &DesktopItemView::requestCd, this, &DesktopListView::requestCd);
-                this->setItemWidget(item, desktopItemView);
-                if(!isUpdate)
-                    item->setText(desktopItemView->m_displayName);
-                cachedItem.insert(file, item);
-            }
-            m_loading = false;
-            emit finishLoad();
-            emit fileCount(cachedItem.count());
-            if(isUpdate == false) {
-                sortItems();
-                for(auto i : cachedItem.values()) i->setText("");
-            }
-//        });
+            DesktopItemView *desktopItemView = new DesktopItemView(file, launcher, dock, this);
+            connect(desktopItemView, &DesktopItemView::requestCd, this, &DesktopListView::requestCd);
+            this->setItemWidget(item, desktopItemView);
+            cachedItem.insert(file, item);
+        }
+        m_loading = false;
+        emit finishLoad();
+        emit fileCount(cachedItem.count());
+
+        if(!addFiles.isEmpty())
+            m_watcher->setFuture(QtConcurrent::mapped(addFiles, map));
     });
 
     connect(this, &DesktopListView::itemDoubleClicked, [this](QListWidgetItem *item){
@@ -337,8 +387,10 @@ DesktopListView::DesktopListView(QWidget *parent) : QListWidget(parent),
     });
     connect(this, &DesktopListView::currentItemChanged, [this](QListWidgetItem *current, QListWidgetItem *prev){
         if(current)
-            if(DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(current)))
+            if(DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(current))) {
                 v->currentChanged(true);
+                emit message(QString("%1 -- %2 -- %3").arg(v->m_info.displayName).arg(v->m_info.packageName).arg(v->m_info.file));
+            }
         if(prev)
             if(DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(prev)))
                 v->currentChanged(false);
@@ -354,6 +406,10 @@ DesktopListView::DesktopListView(QWidget *parent) : QListWidget(parent),
     refresh();
 }
 
+DesktopListView::~DesktopListView() {
+    m_watcher->cancel();
+}
+
 void DesktopListView::refresh() {
     if(m_searchEditor && !m_searchEditor->isHidden()) {
         m_searchTimer->stop();
@@ -362,6 +418,7 @@ void DesktopListView::refresh() {
     if(m_loading) return;
 
     m_loading = true;
+    m_watcher->cancel();
     QTimer::singleShot(10, this, [this] {
         emit startLoad();
         while(count()>0) {
@@ -382,7 +439,7 @@ QMimeData *DesktopListView::mimeData(const QList<QListWidgetItem *> items) const
     QMimeData *data = new QMimeData();
     QList<QUrl> urls;
     for(auto item : items) {
-        urls << QUrl::fromLocalFile(qobject_cast<DesktopItemView*>(itemWidget(item))->m_file);
+        urls << QUrl::fromLocalFile(qobject_cast<DesktopItemView*>(itemWidget(item))->m_info.file);
     }
     data->setUrls(urls);
     return data;
@@ -435,7 +492,7 @@ void DesktopListView::keyReleaseEvent(QKeyEvent *event)
     if(count() > 0) {
         if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
             if(QListWidgetItem *item = currentItem()) {
-                DUrlList urls; urls << DUrl::fromLocalFile(qobject_cast<DesktopItemView*>(itemWidget(item))->m_file);
+                DUrlList urls; urls << DUrl::fromLocalFile(qobject_cast<DesktopItemView*>(itemWidget(item))->m_info.file);
                 emit fileSignalManager->requestShowFilePreviewDialog(urls, {});
                 return;
             }
@@ -453,7 +510,7 @@ void DesktopListView::keyReleaseEvent(QKeyEvent *event)
             while(curr < max) {
                 if(QListWidgetItem *i = item(curr)) {
                     if(DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(i))) {
-                        if(v->m_displayName.contains(filter, Qt::CaseInsensitive))
+                        if(v->m_info.displayName.contains(filter, Qt::CaseInsensitive))
                             return setCurrentRow(curr);;
                     }
                 }
@@ -466,7 +523,7 @@ void DesktopListView::keyReleaseEvent(QKeyEvent *event)
                 while(curr < max) {
                     if(QListWidgetItem *i = item(curr)) {
                         if(DesktopItemView *v = qobject_cast<DesktopItemView*>(itemWidget(i))) {
-                            if(v->m_displayName.contains(filter, Qt::CaseInsensitive))
+                            if(v->m_info.displayName.contains(filter, Qt::CaseInsensitive))
                                 return setCurrentRow(curr);
                         }
                     }

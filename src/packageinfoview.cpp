@@ -379,8 +379,9 @@ PackageInfoView::PackageInfoView(QWidget *parent) : QTabWidget(parent),
     m_treeView(new PackageTreeView(this)),
     m_packView(new PackagePackView(this))
 {
-    setTabShape(QTabWidget::Rounded);
+    setTabShape(QTabWidget::Triangular);
     setTabPosition(QTabWidget::South);
+    setDocumentMode(true);
 
     addTab(m_detailView, "包信息");
     addTab(m_treeView, "包文件");

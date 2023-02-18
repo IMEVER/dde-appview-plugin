@@ -10,12 +10,14 @@ using DBusDock = com::deepin::dde::daemon::Dock;
 
 class LauncherDbus;
 class QTimer;
+struct DesktopFileInfo;
 
 class DesktopListView : public QListWidget
 {
     Q_OBJECT
 public:
     DesktopListView(QWidget *parent=nullptr);
+    ~DesktopListView();
     void refresh();
 
 protected:
@@ -32,6 +34,7 @@ signals:
     void finishLoad();
     void fileCount(int num);
     void requestCd(DUrl url);
+    void message(QString msg);
 
 private:
     QMap<QString, QListWidgetItem*> cachedItem;
@@ -41,6 +44,8 @@ private:
 
     QLineEdit *m_searchEditor;
     QTimer *m_searchTimer;
+    QFutureWatcher<DesktopFileInfo*> *m_watcher;
+    bool m_update;
 };
 
 #endif // DESKTOPLISTVIEW_H

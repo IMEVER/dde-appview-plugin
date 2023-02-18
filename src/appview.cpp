@@ -70,6 +70,7 @@ void AppView::refresh(bool force) {
                 statusBar->setText(QString("%1 项").arg(count));
             });
             connect(m_desktopListView, &DesktopListView::finishLoad, this, &AppView::finishLoad);
+            connect(m_desktopListView, &DesktopListView::message, statusBar, &QLabel::setText);
             m_mainWidget->addWidget(m_desktopListView);
         } else {
             if(force)
